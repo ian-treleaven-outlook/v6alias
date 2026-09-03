@@ -1,0 +1,10 @@
+profiles:
+  corp:
+    prefix: "fd7a:115c:a1e0::/48"
+    default_subnet: 23
+  lab:
+    prefix: "fdb4:82d1:930c::/48"
+    default_subnet: 7
+  quarantine:
+    prefix: "fdc2:604e:8219::/48"
+    default_subnet: 1

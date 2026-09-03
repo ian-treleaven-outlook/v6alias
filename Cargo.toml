@@ -1,0 +1,15 @@
+[package]
+name = "v6alias"
+version = "0.1.0"
+edition = "2024"
+description = "Human-friendly aliases for managed IPv6 ULA addresses"
+repository = "https://github.com/ian-treleaven-outlook/v6alias"
+readme = "README.md"
+keywords = ["ipv6", "ula", "networking", "dhcpv6"]
+categories = ["command-line-utilities", "network-programming"]
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_yaml = "0.9.34"
+thiserror = "2.0.20"
