@@ -95,6 +95,10 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
+See the [testing strategy](docs/testing.md) for the core unit-test matrix,
+persistence and artifact tests, FFI validation, WinUI checks, and Hyper-V
+acceptance plan.
+
 The first milestone is intentionally small: establish and test the address
 grammar before adding persistence, allocation, policy, DHCPv6, and DNS.
 

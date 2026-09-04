@@ -14,7 +14,11 @@ pub struct Config {
 impl Config {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let contents = std::fs::read_to_string(path).map_err(ConfigError::Read)?;
-        let config: Self = serde_yaml::from_str(&contents).map_err(ConfigError::Parse)?;
+        Self::from_yaml(&contents)
+    }
+
+    pub fn from_yaml(contents: &str) -> Result<Self, ConfigError> {
+        let config: Self = serde_yaml::from_str(contents).map_err(ConfigError::Parse)?;
         config.validate()?;
         Ok(config)
     }
@@ -24,9 +28,17 @@ impl Config {
             return Err(ConfigError::NoProfiles);
         }
 
+        let mut prefixes = BTreeMap::new();
         for (name, profile) in &self.profiles {
             validate_profile_name(name)?;
-            profile.prefix_segments()?;
+            let prefix = profile.prefix_segments()?;
+            if let Some(first) = prefixes.insert(prefix, name) {
+                return Err(ConfigError::DuplicateProfilePrefix {
+                    prefix: profile.prefix.clone(),
+                    first: first.clone(),
+                    second: name.clone(),
+                });
+            }
         }
 
         Ok(())
@@ -136,6 +148,12 @@ pub enum ConfigError {
     InvalidProfileName(String),
     #[error("`{0}` must be a canonical locally assigned ULA /48 prefix")]
     InvalidPrefix(String),
+    #[error("profiles `{first}` and `{second}` use duplicate ULA prefix `{prefix}`")]
+    DuplicateProfilePrefix {
+        prefix: String,
+        first: String,
+        second: String,
+    },
     #[error("unknown profile `{0}`")]
     UnknownProfile(String),
     #[error("profile `{0}` has no default subnet; use an explicit alias")]
@@ -186,10 +204,31 @@ mod tests {
     }
 
     #[test]
+    fn explicit_subnet_overrides_the_profile_default() {
+        let address = config()
+            .resolve(&"corp:65535.65535".parse().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            address,
+            "fd7a:115c:a1e0:ffff::ffff".parse::<Ipv6Addr>().unwrap()
+        );
+    }
+
+    #[test]
     fn reverses_to_shortest_alias() {
         let config = config();
         let address = "fd7a:115c:a1e0:17::2a".parse().unwrap();
         assert_eq!(config.reverse(address).unwrap().to_string(), "corp:42");
+    }
+
+    #[test]
+    fn explicit_nondefault_subnet_survives_round_trip() {
+        let config = config();
+        let alias: Alias = "corp:7.42".parse().unwrap();
+        let address = config.resolve(&alias).unwrap();
+
+        assert_eq!(config.reverse(address).unwrap(), alias);
     }
 
     #[test]
@@ -201,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_noncanonical_or_nonrandom_style_prefixes() {
+    fn rejects_noncanonical_or_reserved_prefixes() {
         for prefix in [
             "fd00::/48",
             "fd7a:115c:a1e0:1::/48",
@@ -214,5 +253,50 @@ mod tests {
             };
             assert!(profile.prefix_segments().is_err(), "{prefix}");
         }
+    }
+
+    #[test]
+    fn rejects_duplicate_profile_prefixes() {
+        let config = Config {
+            profiles: BTreeMap::from([
+                (
+                    "corp".into(),
+                    Profile {
+                        prefix: "fd7a:115c:a1e0::/48".into(),
+                        default_subnet: Some(1),
+                    },
+                ),
+                (
+                    "lab".into(),
+                    Profile {
+                        prefix: "fd7a:115c:a1e0::/48".into(),
+                        default_subnet: Some(2),
+                    },
+                ),
+            ]),
+        };
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::DuplicateProfilePrefix { .. })
+        ));
+    }
+
+    #[test]
+    fn parses_yaml_independently_of_the_filesystem() {
+        let config = Config::from_yaml(
+            r#"
+profiles:
+  corp:
+    prefix: "fd7a:115c:a1e0::/48"
+    default_subnet: 23
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.resolve(&"corp:42".parse().unwrap()).unwrap(),
+            "fd7a:115c:a1e0:17::2a".parse::<Ipv6Addr>().unwrap()
+        );
     }
 }

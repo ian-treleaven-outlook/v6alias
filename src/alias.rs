@@ -125,4 +125,27 @@ mod tests {
         ));
         assert_eq!("corp:0".parse::<Alias>(), Err(AliasError::DeviceZero));
     }
+
+    #[test]
+    fn accepts_the_full_numeric_range() {
+        let alias: Alias = "corp:65535.65535".parse().unwrap();
+
+        assert_eq!(alias.subnet, Some(u16::MAX));
+        assert_eq!(alias.device, u16::MAX);
+        assert_eq!(alias.to_string(), "corp:65535.65535");
+    }
+
+    #[test]
+    fn rejects_invalid_profiles_and_shapes() {
+        for input in [
+            "Corp:42",
+            "corp_name:42",
+            ":42",
+            "corp:",
+            "corp:1.2.3",
+            "corp:-1",
+        ] {
+            assert!(input.parse::<Alias>().is_err(), "{input}");
+        }
+    }
 }
