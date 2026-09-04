@@ -34,6 +34,23 @@ cargo run -- reverse fd7a:115c:a1e0:17::2a
 # corp:42
 ```
 
+It can also resolve an alias and invoke familiar networking tools without
+replacing or shadowing their executables:
+
+```powershell
+cargo run -- ping corp:42 --dry-run -- -n 5
+# Resolved: corp:42 -> fd7a:115c:a1e0:17::2a
+# Command:  ping -6 -n 5 fd7a:115c:a1e0:17::2a
+
+cargo run -- trace corp:42 --dry-run
+cargo run -- ssh corp:42 --dry-run -- -l administrator
+```
+
+Arguments after `--` are passed directly to the underlying command before the
+resolved address. V6Alias launches the executable without a shell, displays the
+exact invocation, and returns its exit code. `--dry-run` performs resolution
+and prints the command without executing it.
+
 Configuration:
 
 ```yaml
@@ -59,10 +76,16 @@ organizational prefix.
 - Private AAAA and `ip6.arpa` PTR synchronization
 - An isolated Hyper-V demonstration using pfSense
 - An external service deployment model that does not modify pfSense internals
+- A packaged C++/WinRT WinUI 3 configuration app over a narrow Rust FFI
 
 Unknown or conflicting devices must enter quarantine or be rejected. An
 address assignment never grants authorization; VLAN, NAC, firewall, and
 application controls remain authoritative.
+
+All operational components—including the library, allocator, policy engine,
+artifact generators, daemon, and command-line tools—remain pure Rust. C++ is
+limited to the replaceable WinUI 3/XAML presentation layer so future web and
+non-Windows interfaces can reuse the same Rust APIs.
 
 ## Development
 
