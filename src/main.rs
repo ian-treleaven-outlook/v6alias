@@ -1,7 +1,7 @@
 use std::{ffi::OsString, net::Ipv6Addr, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand};
-use v6alias::{Alias, Config, Invocation, NetworkTool};
+use v6alias::{Alias, Config, Invocation, NetworkTool, UlaPrefix};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -28,6 +28,17 @@ enum Command {
     Trace(NetworkCommand),
     /// Resolve an alias and run the OpenSSH client over IPv6.
     Ssh(NetworkCommand),
+    /// Manage RFC 4193 Unique Local Address prefixes.
+    Ula {
+        #[command(subcommand)]
+        command: UlaCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum UlaCommand {
+    /// Generate a cryptographically random locally assigned ULA /48.
+    Generate,
 }
 
 #[derive(Debug, Args)]
@@ -54,20 +65,31 @@ fn main() {
 
 fn run() -> Result<Option<i32>, Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let config = Config::from_path(cli.config)?;
 
     match cli.command {
-        Command::Resolve { alias } => println!("{}", config.resolve(&alias)?),
-        Command::Reverse { address } => println!("{}", config.reverse(address)?),
+        Command::Resolve { alias } => {
+            let config = Config::from_path(&cli.config)?;
+            println!("{}", config.resolve(&alias)?);
+        }
+        Command::Reverse { address } => {
+            let config = Config::from_path(&cli.config)?;
+            println!("{}", config.reverse(address)?);
+        }
         Command::Ping(command) => {
+            let config = Config::from_path(&cli.config)?;
             return run_network_command(&config, command, NetworkTool::Ping);
         }
         Command::Trace(command) => {
+            let config = Config::from_path(&cli.config)?;
             return run_network_command(&config, command, NetworkTool::Trace);
         }
         Command::Ssh(command) => {
+            let config = Config::from_path(&cli.config)?;
             return run_network_command(&config, command, NetworkTool::Ssh);
         }
+        Command::Ula {
+            command: UlaCommand::Generate,
+        } => println!("{}", UlaPrefix::generate()?),
     }
 
     Ok(None)

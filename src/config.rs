@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, net::Ipv6Addr, path::Path, str::FromStr};
+use std::{collections::BTreeMap, net::Ipv6Addr, path::Path};
 
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::Alias;
+use crate::{Alias, UlaPrefix};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -103,25 +103,10 @@ pub struct Profile {
 
 impl Profile {
     fn prefix_segments(&self) -> Result<[u16; 3], ConfigError> {
-        let (address, length) = self
-            .prefix
-            .split_once('/')
-            .ok_or_else(|| ConfigError::InvalidPrefix(self.prefix.clone()))?;
-        if length != "48" {
-            return Err(ConfigError::InvalidPrefix(self.prefix.clone()));
-        }
-
-        let address = Ipv6Addr::from_str(address)
-            .map_err(|_| ConfigError::InvalidPrefix(self.prefix.clone()))?;
-        let segments = address.segments();
-        if segments[0] & 0xff00 != 0xfd00
-            || segments[..3] == [0xfd00, 0, 0]
-            || segments[3..] != [0, 0, 0, 0, 0]
-        {
-            return Err(ConfigError::InvalidPrefix(self.prefix.clone()));
-        }
-
-        Ok([segments[0], segments[1], segments[2]])
+        self.prefix
+            .parse::<UlaPrefix>()
+            .map(UlaPrefix::segments)
+            .map_err(|_| ConfigError::InvalidPrefix(self.prefix.clone()))
     }
 }
 

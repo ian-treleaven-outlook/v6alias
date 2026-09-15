@@ -67,6 +67,15 @@ The example prefixes are illustrative. Generate and permanently register a
 random RFC 4193 `/48` before deployment. Do not use `fd00::/48` as a shared
 organizational prefix.
 
+```powershell
+cargo run -- ula generate
+# fdxx:xxxx:xxxx::/48
+```
+
+Generation uses 40 cryptographically random Global ID bits and rejects the
+reserved all-zero value. Persist the generated prefix rather than generating a
+new one on each run.
+
 ## Planned architecture
 
 - Stable sequential allocation of small managed device numbers
