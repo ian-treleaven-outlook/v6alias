@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "source": "synthetic-native",
+  "captured_at_unix_secs": 100,
+  "source_contract": "pfsense-2.8.1-isc-4.4.3P1-unbound-1.24.2-native-v1",
+  "pfsense_version": "2.8.1-RELEASE",
+  "dhcp_backend": "isc",
+  "isc_version": "4.4.3P1",
+  "unbound_version": "1.24.2",
+  "ttl_capability": "unbound-local-data-default-3600-no-ttl-overrides",
+  "complete": true,
+  "coverage": "all-staticmaps-hosts-aliases-and-external-conflicts",
+  "config_revision_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "offline_generation": 0,
+  "scopes": {
+    "lan": {
+      "subnet": "fd12:3456:789a:a::",
+      "prefix_length": 64,
+      "router_address": "fd12:3456:789a:a::1",
+      "external_static_addresses": ["fd12:3456:789a:a::35"]
+    }
+  },
+  "external_dns": [{"name": "outside.example.", "addresses": ["192.0.2.77"]}],
+  "config": {
+    "opaque_synthetic_note": {"z": "retained first", "a": "retained second"},
+    "interfaces": {
+      "lan": {"ipaddrv6": "fd12:3456:789a:a::1", "subnetv6": "64"}
+    },
+    "dhcpdv6": {
+      "lan": {
+        "range": {"from": "fd12:3456:789a:a::1000", "to": "fd12:3456:789a:a::ffff"},
+        "staticmap": [
+          {
+            "duid": "00:01:aa:bb",
+            "ipaddrv6": "fd12:3456:789a:a::35",
+            "hostname": "foreign",
+            "descr": "operator-owned; preserve",
+            "filename": "opaque-boot-value",
+            "extra_opaque": {"z": 2, "a": 1}
+          }
+        ],
+        "opaque_scope_note": ["preserve", "order"]
+      }
+    },
+    "unbound": {
+      "opaque_resolver_note": "unchanged",
+      "hosts": [
+        {
+          "host": "foreign",
+          "domain": "demo.home.arpa",
+          "ip": "fd12:3456:789a:a::35,192.0.2.53",
+          "descr": "operator-owned",
+          "aliases": {"item": [
+            {"host": "printer", "domain": "demo.home.arpa", "description": "retained alias"},
+            {"host": "scanner", "domain": "demo.home.arpa", "description": "second alias"}
+          ]},
+          "opaque_host_note": ["unchanged", 9]
+        }
+      ]
+    }
+  }
+}

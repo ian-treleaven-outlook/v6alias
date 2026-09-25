@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source": "synthetic-native",
+  "audit_id": "offline-fixture-not-live-approval",
+  "audited_at_unix_secs": 100,
+  "max_age_secs": 300,
+  "dns_zone": "demo.home.arpa",
+  "globals_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "standard_lock_path": "/tmp/config.lock",
+  "managed_interfaces": ["lan"],
+  "scopes": {
+    "lan": {
+      "router_address": "fd12:3456:789a:a::1",
+      "external_static_addresses": ["fd12:3456:789a:a::35"],
+      "approved_reservation_addresses": ["fd12:3456:789a:a::2"]
+    }
+  }
+}

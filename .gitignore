@@ -1,3 +1,10 @@
 /target
 v6alias.yaml
 lab/*.local.yaml
+/state/
+/service.local.yaml
+/dist/
+__pycache__/
+*.py[cod]
+/docs/presentations/*.pptx
+/docs/presentations/*.mp4

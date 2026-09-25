@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source": "synthetic-corp",
+  "captured_at_unix_secs": 0,
+  "observations": [
+    {
+      "duid": "000400112233445566778899aabbccddeeff",
+      "iaid": 1,
+      "hostname": "untrusted-hint"
+    }
+  ]
+}

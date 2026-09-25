@@ -1,0 +1,5 @@
+# SYNTHETIC empty ISC DHCPv6 database, not a capture from a router.
+authoring-byte-order little-endian;
+server-duid "\000\001\000\001\000\000\000\001\002\000\000\000\000\001";
+# Identical header replay mirrors the observed pfSense file shape; identity is synthetic.
+server-duid "\000\001\000\001\000\000\000\001\002\000\000\000\000\001";

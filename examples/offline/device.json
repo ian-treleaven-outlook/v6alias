@@ -1,0 +1,7 @@
+{
+  "asset_id": "demo-workstation",
+  "duid": "00:04:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+  "iaid": 1,
+  "managed": true,
+  "dns_label": "demo-workstation"
+}

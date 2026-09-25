@@ -1,0 +1,24 @@
+# SYNTHETIC IA_NA records, not real client arrivals or captured private state.
+# IAID bytes use the WRITING server's little-endian order, not network order.
+authoring-byte-order little-endian;
+server-duid 00:01:00:01:00:00:00:01:02:00:00:00:00:01;
+ia-na "\001\000\000\000\000\004\000\021\042\063\104\125\146\167\210\231\252\273\314\335\356\377" {
+  iaaddr fd7a:115c:a1e0:17::1000 {
+    binding state active;
+    preferred-life 3600;
+    max-life 7200;
+    ends never;
+    set ddns-fwd-name = "untrusted.example.invalid";
+    set opaque = "\000\200\377#;{}";
+    set counter = %-123;
+    set flag = true;
+  }
+}
+ia-na 01:00:00:00:aa:bb {
+  iaaddr fdb4:82d1:930c:7::1000 {
+    binding state active;
+    preferred-life 3600;
+    max-life 7200;
+    ends never;
+  }
+}

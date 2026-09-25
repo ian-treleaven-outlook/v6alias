@@ -1,0 +1,42 @@
+profiles:
+  corp:
+    prefix: "fd7a:115c:a1e0::/48"
+    default_subnet: 23
+    require_managed: true
+  lab:
+    prefix: "fdb4:82d1:930c::/48"
+    default_subnet: 7
+    require_managed: false
+  quarantine:
+    prefix: "fdc2:604e:8219::/48"
+    default_subnet: 1
+    require_managed: false
+links:
+  corp-link:
+    profile: corp
+    subnet: 23
+    pool: {first: 2, last: 4095}
+    reserved: [53]
+  lab-link:
+    profile: lab
+    subnet: 7
+    pool: {first: 2, last: 4095}
+  quarantine-link:
+    profile: quarantine
+    subnet: 1
+    pool: {first: 2, last: 4095}
+dns_zone: v6alias.home.arpa
+rules:
+  - name: managed-corporate
+    priority: 100
+    links: [corp-link]
+    managed: true
+    profile: corp
+  - name: inventoried-lab
+    priority: 80
+    links: [lab-link]
+    profile: lab
+  - name: inventoried-quarantine
+    priority: 0
+    links: [quarantine-link]
+    profile: quarantine

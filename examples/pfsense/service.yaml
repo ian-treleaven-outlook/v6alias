@@ -1,0 +1,20 @@
+# Synthetic only: independently created inventory is required; never migrate a pinned DB.
+profiles:
+  demo:
+    prefix: "fd12:3456:789a::/48"
+    default_subnet: 10
+    require_managed: true
+links:
+  demo-link:
+    profile: demo
+    subnet: 10
+    pool: {first: 2, last: 4095}
+    reserved: [53]
+dns_zone: demo.home.arpa
+dns_ttl_seconds: 3600
+rules:
+  - name: managed-demo
+    priority: 100
+    links: [demo-link]
+    managed: true
+    profile: demo

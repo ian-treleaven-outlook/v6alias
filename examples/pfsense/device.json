@@ -1,0 +1,7 @@
+{
+  "asset_id": "synthetic-device",
+  "duid": "000400112233445566778899aabbccddeeff",
+  "iaid": 7,
+  "managed": true,
+  "dns_label": "synthetic-host"
+}

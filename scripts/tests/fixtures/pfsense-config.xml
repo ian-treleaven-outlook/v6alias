@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<pfsense>
+  <version>24.0</version>
+  <system>
+    <hostname>synthetic-router</hostname>
+    <domain>example.test</domain>
+    <user><name>synthetic</name><bcrypt-hash>SECRET-FIXTURE-NOT-A-CREDENTIAL</bcrypt-hash></user>
+    <ssh><key>SECRET-PRIVATE-FIXTURE</key></ssh>
+  </system>
+  <dhcpbackend>isc</dhcpbackend>
+  <interfaces>
+    <wan><if>vtnet0</if><ipaddr>192.0.2.1</ipaddr></wan>
+    <lan><if>vtnet1</if><ipaddrv6>fd12:3456:789a:a::1</ipaddrv6><subnetv6>64</subnetv6></lan>
+  </interfaces>
+  <dhcpdv6>
+    <lan>
+      <enable/>
+      <range><from>fd12:3456:789a:a::1000</from><to>fd12:3456:789a:a::ffff</to></range>
+      <staticmap>
+        <duid>00:01:aa:bb</duid><ipaddrv6>fd12:3456:789a:a::35</ipaddrv6>
+        <hostname>foreign</hostname><descr><![CDATA[operator-owned; preserve & punctuation]]></descr>
+        <filename>opaque-boot-value</filename>
+      </staticmap>
+      <!-- preserve this foreign comment -->
+    </lan>
+  </dhcpdv6>
+  <unbound>
+    <enable/><dnssec/>
+    <hosts><host>foreign</host><domain>demo.home.arpa</domain><ip>fd12:3456:789a:a::35,192.0.2.53</ip><descr>operator-owned</descr>
+      <aliases><item><host>printer</host><domain>demo.home.arpa</domain><description>retained alias</description></item></aliases>
+    </hosts>
+  </unbound>
+  <filter><rule><descr>unrelated rule</descr><source><any/></source></rule></filter>
+</pfsense>
