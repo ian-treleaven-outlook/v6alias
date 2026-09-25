@@ -1,4 +1,5 @@
 mod config;
+pub mod expansion;
 pub mod isc;
 mod model;
 pub mod pfsense;

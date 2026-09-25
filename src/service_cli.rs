@@ -84,6 +84,14 @@ pub struct ServiceArgs {
 
 #[derive(Debug, Subcommand)]
 enum ServiceCommand {
+    /// Copy validated history into a NEW database under a strictly additive config; no cutover.
+    ExpandConfig {
+        #[arg(long, value_name = "PATH")]
+        new_service_config: PathBuf,
+        /// Must not exist; source and destination require trusted local directories.
+        #[arg(long, value_name = "NEW_DB")]
+        destination: PathBuf,
+    },
     /// Persist a permanent local assignment offline; never configure a live endpoint.
     Allocate(ObservationArgs),
     /// Read active assignments and permanent retired tombstones without modifying them.
@@ -154,6 +162,29 @@ impl PolicyArgs {
 
 impl ServiceArgs {
     pub fn run(self) -> CliResult {
+        if let ServiceCommand::ExpandConfig {
+            new_service_config,
+            destination,
+        } = &self.command
+        {
+            let result = (|| {
+                let old = v6alias_service::expansion::read_config(&self.service_config)?;
+                let new = v6alias_service::expansion::read_config(new_service_config)?;
+                v6alias_service::expansion::expand(&self.database, &old, &new, destination)
+            })();
+            let receipt = result.map_err(|error| {
+                // Untrusted YAML keys/values must not produce unbounded diagnostics.
+                let detail: String = error
+                    .to_string()
+                    .chars()
+                    .take(512)
+                    .map(|c| if c.is_control() { ' ' } else { c })
+                    .collect();
+                format!("configuration expansion failed: {detail}")
+            })?;
+            print_json(&receipt)?;
+            return Ok(None);
+        }
         let config = read_config(&self.service_config)?;
         match self.command {
             ServiceCommand::Allocate(arguments) => {
@@ -184,6 +215,9 @@ impl ServiceArgs {
                 let store = Store::read_only(&self.database)?;
                 let assignments = store.assignments(&config)?;
                 print_json(&reconcile::plan(&config, &assignments, snapshot.as_ref())?)?;
+            }
+            ServiceCommand::ExpandConfig { .. } => {
+                unreachable!("handled before ordinary config reads")
             }
         }
         Ok(None)

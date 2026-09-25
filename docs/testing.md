@@ -19,6 +19,7 @@ Existing local tests cover these layers without live network services:
 | Service input/configuration | Canonical bounded DUIDs, strict fields, ASCII DNS labels, trusted-link/profile consistency, pool bounds and reservations |
 | Policy | Known inventory and matching DUID/IAID, managed-by-default profiles, explicit lab/quarantine opt-out, link confinement, deterministic precedence/traces, tie denial, malformed hostname rejection, no hostname-only authority |
 | SQLite store | Schema recognition and rejection of foreign/changed databases, exact inventory replay and conflicts, lowest unreserved allocation, exhaustion, restart persistence, transactional rollback, concurrent allocation/initialization, successful-first-allocation config pinning, permanent placement and tombstones |
+| Additive expansion | Real CLI corporate-only to lab/quarantine copy; unchanged inventory, active history and tombstones; independent old/new pins; reserved-gap allocation; immutable triggers; strict additive config matrix; missing/unpinned/corrupt sources; exact FQDN/inventory and possible policy provenance; WAL/header/sidecar, path/symlink/hard-link/no-clobber failures; staging cleanup and synchronized concurrent-writer rejection |
 | Reconciliation | Desired-only output with empty deltas, explicit empty/partial/matching snapshots, exact active/retired ownership checks, safe proposed removals, duplicate/drift rejection, deterministic ordering, private AAAA/PTR names and configured bounded TTL (default 300) |
 | Native pfSense compiler | Source/version/ISC/TTL 3600 capability pins, global native conflicts, complete capture and independent address approvals, exact owned replay/removal, raw unmanaged preservation, full-projection/revision CAS, actual offline transformations and exact guarded rollback |
 | CLI | JSON workflow across process restarts, policy denial and failed writes, strict/oversized inputs, guest-field rejection, changed configuration, read-only commands that do not create databases/sidecars, original resolver and wrapper dry runs |
@@ -40,6 +41,29 @@ No lab, guest installation, or deployment is needed. The
 [README walkthrough](../README.md#offline-service-stage) exercises the same
 workflow manually with `service.example.yaml`, `examples\offline` fixtures,
 and an explicit database under the ignored `state` directory.
+
+`tests\expansion_cli.rs` runs the real `v6alias service ... expand-config`
+command on synthetic TTL-3600 inventories. Service-crate expansion tests retain
+raw source bytes, compare full semantic history after reopening, verify both
+permanent pins and all immutable triggers, and inject a failure or competing
+destination immediately before publication. A bounded channel-coordinated
+SQLite writer proves it cannot commit during the source read transaction.
+No sleeps determine ordering. WAL fixtures verify refusal before any SHM/WAL
+creation. Tests own temporary directories under the project and clean them up;
+they never inspect an accepted database or require a live service. On Windows,
+the CLI collision test additionally checks case aliases; Unix tests cover
+symlink inputs and symlink parents. These are preparation tests, not fleet
+acceptance or cutover authorization.
+
+To execute a cross-compiled `expansion_cli` test harness on native Windows,
+set `V6ALIAS_TEST_ROOT` to the checkout and `V6ALIAS_TEST_BINARY` to the freshly
+built Windows `v6alias.exe`, then run the harness under
+`target\x86_64-pc-windows-gnu\debug\deps`. These optional test-only overrides
+replace Linux paths embedded by the cross compiler; ordinary `cargo test` needs
+neither. The native suite checks expansion/reopen, exact retained records,
+replay, old-link reserved/tombstone allocation, new lab allocation, unknown and
+retired denial, wrong pins, TTL/no-op/oversize refusal, and case/hard-link
+collisions. All fixture files still live in newly owned project subdirectories.
 
 Interface formatting tests use values only and do not require assigned test
 addresses. Separate `interfaces_cli` integration tests exercise read-only OS
@@ -574,6 +598,32 @@ preserved integer values, input identity/hash stability, expiry, non-approval,
 collision/reparse/hardlink rejection, output limits and owned-child timeouts.
 CI runs these Windows workflows and the PHP/Rust fixture pipeline independently;
 neither step performs router operations.
+
+## Windows fleet migration preparation
+
+`scripts/tests/Test-ServerCoreDhcpv6.ps1` AST-loads only helper functions and
+mocks every networking operation. It covers explicit plans, safe mutation order,
+read-only Inspect/Verify, WhatIf, fixed DUID/IAID, persistent and active stores,
+scoped link-local address normalization, DNS ownership/drift, and durable journals.
+Native English RA-DNS labels include `(RFC 6106)` and persistent `Default`;
+the latter requires an explicit VM-snapshot recovery strategy rather than a
+fabricated native setter. Failure-journal and report failures do not mask the
+original error or permit unjournaled recovery.
+
+Native read-only guest observations are separate from these mocks: the prepared
+Windows guest has inherited empty persistent Advertising/Forwarding fields,
+disabled active values, automatic DNS placeholders and an unchanged manual ULA.
+The tests preserve those distinctions and reject foreign changes. They do not
+claim that Windows has already migrated.
+
+```powershell
+.\scripts\tests\Test-ServerCoreDhcpv6.ps1
+```
+
+The fleet guard tests cover explicit quarantine observation without broadening
+the existing demo lifecycle. Default calls still reject a running quarantine
+guest, and opt-in observation still refuses an incorrect disk, network, symlink
+or physical bridge member. The opt-in code was not used to start a guest.
 
 ## Future WinUI tests
 

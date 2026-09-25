@@ -8,7 +8,7 @@ use v6alias_core::{Config, Profile, UlaPrefix};
 
 use crate::{ServiceError, validate_dns_label};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceConfig {
     pub profiles: BTreeMap<String, ServiceProfile>,
@@ -31,7 +31,7 @@ fn is_default_dns_ttl(value: &u32) -> bool {
     *value == default_dns_ttl()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceProfile {
     pub prefix: String,
@@ -44,7 +44,7 @@ fn require_managed() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Link {
     pub profile: String,
@@ -54,14 +54,14 @@ pub struct Link {
     pub reserved: BTreeSet<u16>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pool {
     pub first: u16,
     pub last: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rule {
     pub name: String,
@@ -195,6 +195,48 @@ impl ServiceConfig {
     pub fn identity(&self) -> Result<String, ServiceError> {
         self.validate()?;
         Ok(serde_json::to_string(self)?)
+    }
+
+    /// Existing placements and every possible old-link policy decision must be unchanged.
+    pub fn validate_expansion(&self, new: &Self) -> Result<(), ServiceError> {
+        self.validate()?;
+        new.validate()?;
+        if self.dns_zone != new.dns_zone || self.dns_ttl_seconds != new.dns_ttl_seconds {
+            return Err(ServiceError::Config(
+                "expansion cannot change DNS zone or TTL".into(),
+            ));
+        }
+        if self
+            .profiles
+            .iter()
+            .any(|(key, value)| new.profiles.get(key) != Some(value))
+            || self
+                .links
+                .iter()
+                .any(|(key, value)| new.links.get(key) != Some(value))
+        {
+            return Err(ServiceError::Config(
+                "expansion must retain every old profile and link exactly".into(),
+            ));
+        }
+        if !new.rules.starts_with(&self.rules)
+            || new.rules[self.rules.len()..]
+                .iter()
+                .any(|rule| rule.links.iter().any(|link| self.links.contains_key(link)))
+        {
+            return Err(ServiceError::Config(
+                "expansion must retain the ordered rule prefix and append rules only for new links"
+                    .into(),
+            ));
+        }
+        // validate() rejects aliased /48s and duplicate profile/subnet pairs. Thus
+        // new links, including new subnets of an old profile, have disjoint /64s.
+        if self.profiles.len() == new.profiles.len() && self.links.len() == new.links.len() {
+            return Err(ServiceError::Config(
+                "expansion must add at least one profile or trusted link".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn fqdn(&self, label: &str) -> Result<String, ServiceError> {

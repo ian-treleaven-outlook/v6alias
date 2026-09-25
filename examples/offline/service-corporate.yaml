@@ -1,0 +1,20 @@
+# Synthetic expansion source. Allocate once to pin it before expand-config.
+# service.example.yaml is its strictly additive lab/quarantine expansion (TTL 300).
+profiles:
+  corp:
+    prefix: "fd7a:115c:a1e0::/48"
+    default_subnet: 23
+    require_managed: true
+links:
+  corp-link:
+    profile: corp
+    subnet: 23
+    pool: {first: 2, last: 4095}
+    reserved: [53]
+dns_zone: v6alias.home.arpa
+rules:
+  - name: managed-corporate
+    priority: 100
+    links: [corp-link]
+    managed: true
+    profile: corp

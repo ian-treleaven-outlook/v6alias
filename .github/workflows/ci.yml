@@ -33,6 +33,7 @@ jobs:
           .\scripts\tests\Test-LabHelpers.ps1
           .\scripts\tests\Test-LiveDemo.ps1
           .\scripts\tests\Test-ServerCoreHarness.ps1
+          .\scripts\tests\Test-ServerCoreDhcpv6.ps1
       - name: Bash demo shortcuts (offline mocks only)
         if: matrix.os == 'ubuntu-latest'
         run: |

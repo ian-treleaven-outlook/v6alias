@@ -24,6 +24,7 @@ APPROVED = ("scout-v6alias", "scout-admin", "scout-corp-client",
 BLOCKED = ("scout-quar-client",)
 VMs = APPROVED + BLOCKED
 IMAGES = {name: f"/var/lib/libvirt/images/scout/{name}.qcow2" for name in APPROVED}
+QUARANTINE_IMAGE = "/var/lib/libvirt/images/scout/scout-quar-client.qcow2"
 NETWORKS = {
     "scout-wan": "virbr-scoutwan",
     "scout-lan": "virbr-scoutlan",
@@ -148,11 +149,12 @@ def check_route(runner):
         ) from error
 
 
-def read_states(runner):
+def read_states(runner, *, allow_quarantine=False):
+    require(type(allow_quarantine) is bool, "Quarantine allowance must be an explicit boolean.")
     states = {name: runner("virsh", "domstate", name) for name in VMs}
     require(all(state in STATES for state in states.values()),
             f"Unexpected scout guest state: {states}")
-    require(all(states[name] == "shut off" for name in BLOCKED),
+    require(allow_quarantine or all(states[name] == "shut off" for name in BLOCKED),
             "scout-quar-client must remain off.")
     return states
 
@@ -248,7 +250,8 @@ def check_domain(text, name, active=False, path_factory=Path):
     root = xml_root(text, "domain", name)
     check_domain_devices(root, name)
     targets = check_interfaces(root, name, VM_NETWORKS[name], active)
-    if name in APPROVED:
+    if name in VMs:
+        image = QUARANTINE_IMAGE if name in BLOCKED else IMAGES[name]
         disks = root.findall("./devices/disk")
         require(len(disks) == 1, f"{name} must have exactly one disk and no other disk media.")
         disk = disks[0]
@@ -257,16 +260,16 @@ def check_domain(text, name, active=False, path_factory=Path):
         require(
             disk.get("type") == "file" and disk.get("device") == "disk"
             and driver is not None and driver.get("type") == "qcow2"
-            and source is not None and source.get("file") == IMAGES[name]
+            and source is not None and source.get("file") == image
             and set(source.attrib) <= ({"file", "index"} if active else {"file"})
             and (not active or "index" not in source.attrib
                  or source.get("index", "").isdigit())
             and len(disk.findall("source")) == 1
             and disk.find(".//backingStore/source") is None
             and disk.find(".//dataStore") is None and disk.find("mirror") is None,
-            f"{name} must use only its exact approved qcow2 image: {IMAGES[name]}",
+            f"{name} must use only its exact approved qcow2 image: {image}",
         )
-        check_image(IMAGES[name], path_factory)
+        check_image(image, path_factory)
     return targets
 
 
@@ -463,22 +466,27 @@ def check_bridge(runner, bridge, expected, path_factory):
             f"{bridge} must have no master and no host IPv4 or IPv6 addresses.")
 
 
-def guard(require_off=False, *, runner=None, path_factory=Path):
+def guard(require_off=False, *, runner=None, path_factory=Path, allow_quarantine=False):
     """Return the original six states after verifying isolation, including optional Windows.
 
-    require_off covers only the five lifecycle-owned guests; quarantine is always off.
+    Quarantine remains off by default. A separately approved migration caller may
+    explicitly observe it running; that does not grant lifecycle ownership to Demo.
+    require_off always requires all original six guests off.
     Provisioners must separately require windows_state(runner) != "running" before edits.
     """
+    require(type(allow_quarantine) is bool, "Quarantine allowance must be an explicit boolean.")
     runner = runner or run
     require(runner("hostname") == "ian-thinkpad", "Unexpected Linux host; refusing.")
     require(runner("id", "-un") == "labagent", "Expected the labagent host identity.")
     require(runner("virsh", "uri") == URI, "Expected qemu:///system.")
     check_route(runner)
     try:
-        states = read_states(runner)
+        states = read_states(runner, allow_quarantine=allow_quarantine)
         optional_state = windows_state(runner)
         if require_off:
-            require(all(states[name] == "shut off" for name in APPROVED),
+            require(all(states[name] == "shut off" for name in VMs),
+                    "All six original guests must be off for this operation."
+                    if allow_quarantine else
                     "All five approved demo guests must be off for this operation.")
         for network in NETWORKS:
             info = runner("virsh", "net-info", network)
@@ -505,7 +513,8 @@ def guard(require_off=False, *, runner=None, path_factory=Path):
                     expected[bridge].add(device)
         for bridge, members in expected.items():
             check_bridge(runner, bridge, members, path_factory)
-        require(read_states(runner) == states, "Guest states changed during verification; retry Status.")
+        require(read_states(runner, allow_quarantine=allow_quarantine) == states,
+                "Guest states changed during verification; retry Status.")
         require(windows_state(runner) == optional_state,
                 "Optional Windows presence/state changed during verification; retry Status.")
         return states

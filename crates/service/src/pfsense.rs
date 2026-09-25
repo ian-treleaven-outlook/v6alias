@@ -36,7 +36,7 @@ const REQUIREMENTS: &[&str] = &[
     "existing_clients_may_need_lease_reacquisition_no_static_ULA_changes",
 ];
 
-mod digest;
+pub(crate) mod digest;
 
 type Result<T> = std::result::Result<T, ServiceError>;
 

@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, path::Path, time::Duration};
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior, config::DbConfig, params,
 };
+use serde::Serialize;
 use v6alias_core::Alias;
 
 use crate::{
@@ -113,6 +114,12 @@ pub struct Store {
     connection: Connection,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct RetainedRecords {
+    pub devices: Vec<InventoryDevice>,
+    pub assignments: Vec<Assignment>,
+}
+
 impl Store {
     /// Opens an explicit write connection and atomically initializes an empty database.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ServiceError> {
@@ -220,12 +227,147 @@ impl Store {
     }
 
     pub fn devices(&self) -> Result<Vec<InventoryDevice>, ServiceError> {
-        let mut statement = self.connection.prepare(&format!(
+        Self::devices_in(&self.connection)
+    }
+
+    fn devices_in(connection: &Connection) -> Result<Vec<InventoryDevice>, ServiceError> {
+        let mut statement = connection.prepare(&format!(
             "SELECT {DEVICE_COLUMNS} FROM inventory ORDER BY asset_id"
         ))?;
         Ok(statement
             .query_map([], device_from_row)?
             .collect::<Result<_, _>>()?)
+    }
+
+    /// Keep a shared SQLite lock until publication finishes. DELETE-mode writers
+    /// cannot commit between reading the pin/history and publishing the copy.
+    pub(crate) fn with_expansion_snapshot<T>(
+        &self,
+        config: &ServiceConfig,
+        consume: impl FnOnce(&RetainedRecords) -> Result<T, ServiceError>,
+    ) -> Result<T, ServiceError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        verify_schema(&transaction)?;
+        let mode: String = transaction.pragma_query_value(None, "journal_mode", |r| r.get(0))?;
+        if mode != "delete" {
+            return Err(ServiceError::Conflict(
+                "expansion requires an offline DELETE-journal source".into(),
+            ));
+        }
+        let integrity: String =
+            transaction.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+        if integrity != "ok" {
+            return Err(ServiceError::Conflict(
+                "source integrity check failed".into(),
+            ));
+        }
+        if !check_config(&transaction, &config.identity()?)? {
+            return Err(ServiceError::Conflict(
+                "expansion requires an already pinned source configuration".into(),
+            ));
+        }
+        let records = RetainedRecords {
+            devices: Self::devices_in(&transaction)?,
+            assignments: Self::assignments_in(&transaction)?,
+        };
+        // Store writers always use canonical strings; do not silently normalize
+        // a manually inserted noncanonical source value while copying history.
+        for assignment in &records.assignments {
+            let raw: String = transaction.query_row(
+                "SELECT address FROM assignments WHERE asset_id = ?1",
+                [&assignment.asset_id],
+                |r| r.get(0),
+            )?;
+            if raw != assignment.address.to_string() {
+                return Err(ServiceError::Conflict(
+                    "noncanonical source assignment".into(),
+                ));
+            }
+        }
+        let result = consume(&records);
+        // Read-only rollback cannot mutate the source. No fallible operation is
+        // permitted after the closure atomically publishes a complete database.
+        drop(transaction);
+        result
+    }
+
+    /// Only the expansion adapter supplies an exclusively owned empty staging file.
+    /// Schema, immutable inventory/history and the NEW pin are one transaction.
+    pub(crate) fn write_expanded(
+        path: &Path,
+        config: &ServiceConfig,
+        records: &RetainedRecords,
+    ) -> Result<(), ServiceError> {
+        let mut connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        connection.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_FKEY, true)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Exclusive)?;
+        let objects: i64 =
+            transaction.query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))?;
+        if objects != 0 || database_identity(&transaction)? != (0, 0) {
+            return Err(ServiceError::Conflict(
+                "staging database is not fresh".into(),
+            ));
+        }
+        for (_, _, sql) in SCHEMA {
+            transaction.execute_batch(sql)?;
+        }
+        transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
+        transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        for device in &records.devices {
+            device.validate()?;
+            transaction.execute(
+                "INSERT INTO inventory (asset_id, duid, iaid, managed, dns_label)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    device.asset_id,
+                    device.duid.as_str(),
+                    device.iaid,
+                    device.managed,
+                    device.dns_label
+                ],
+            )?;
+        }
+        for assignment in &records.assignments {
+            transaction.execute(
+                "INSERT INTO assignments
+                    (asset_id, link, profile, subnet, device, address, fqdn, state, policy_rule)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    assignment.asset_id,
+                    assignment.link,
+                    assignment.profile,
+                    assignment.subnet,
+                    assignment.device,
+                    assignment.address.to_string(),
+                    assignment.fqdn,
+                    if assignment.state == AssignmentState::Active {
+                        "active"
+                    } else {
+                        "retired"
+                    },
+                    assignment.policy_rule,
+                ],
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO metadata (singleton, config_identity) VALUES (1, ?1)",
+            [config.identity()?],
+        )?;
+        verify_schema(&transaction)?;
+        let copied = RetainedRecords {
+            devices: Self::devices_in(&transaction)?,
+            assignments: Self::assignments_in(&transaction)?,
+        };
+        if copied != *records {
+            return Err(ServiceError::Conflict(
+                "retained-record verification failed".into(),
+            ));
+        }
+        transaction.commit()?;
+        connection
+            .close()
+            .map_err(|(_, error)| ServiceError::Storage(error))?;
+        Ok(())
     }
 
     pub fn explain(

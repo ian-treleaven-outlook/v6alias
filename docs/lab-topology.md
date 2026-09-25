@@ -226,3 +226,33 @@ running and isolation intact. No rollback or forced shutdown was required.
 This establishes one pre-enrolled client's actual delivery and DNS persistence.
 It does not establish unattended lease-arrival ingestion, automatic runtime
 application, hot reload, or migration of the remaining static clients.
+
+## Remaining-fleet proposal: September 25, 2026
+
+The following map is prepared locally, **not applied**:
+
+| VM | Current identity | Proposed DHCPv6 alias |
+|---|---|---|
+| `scout-admin` | Accepted `corp:2` | Unchanged |
+| `scout-v6alias` | Static `corp:10` | `corp:3` |
+| `scout-corp-client` | Static `corp:42` | `corp:4` |
+| `scout-win2025` | Static `corp:44` | `corp:5` |
+| `scout-lab-client` | Static `lab:7.15` | `lab:2` |
+| `scout-quar-client` | Existing DHCP/RA configuration, powered off | `quarantine:2` |
+
+The expanded candidate inventory retains the accepted assignment and keeps the
+original database unchanged. New lab and quarantine configuration is strictly
+additive. The quarantine profile still requires known inventory; its existing
+IPv4 DHCP setting must be disabled and RA defaults suppressed before startup.
+The pfSense gateway addresses remain static.
+
+The proposed rollout must preserve the corporate SSH demo by changing only the
+source/target address restrictions, listener address, known-hosts address label
+and command targets; private keys and the pinned host key stay unchanged.
+Windows uses its existing native DHCPv6 identity. Its persistent RA-DNS default
+requires an explicitly approved cold VM snapshot for exact rollback.
+
+Each stage requires fresh router capture, exact change review, recovery snapshots,
+DHCPv6/DNS and no-default-route acceptance, and restart persistence before the
+candidate inventory replaces the accepted one. No unattended enrollment or
+service-only hot reload is implied by this proposal.

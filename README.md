@@ -279,8 +279,8 @@ observation's `untrusted-hint` hostname. Planned AAAA/PTR records use
 positive, no more than one day, so retention is explicit and bounded.
 Omitted TTL and explicit 300 retain the exact old serialized configuration
 identity (including field order); nondefault TTL is part of that identity.
-Switching an allocated database to 3600 fails without a future explicit
-migration, including after retirement. Stale observed TTL is a conflict, not
+Switching an allocated database to 3600 fails, including after retirement;
+additive expansion deliberately cannot change TTL. Stale observed TTL is a conflict, not
 permission to rewrite records. `service.example.yaml` remains unchanged.
 
 Read commands (`inventory list`, `policy explain`, `service assignments`,
@@ -352,8 +352,83 @@ history can be proposed for removal.
   forever, with no automatic address reuse or reactivation.
 - The **full service configuration is pinned after the first successful
   allocation**, not after initialization, explanation, or a failed allocation.
-  Changing configuration values afterward requires a future explicit migration
-  mechanism; do not edit the database ad hoc. Retirement does not unpin it.
+  Existing configuration values cannot change. Strictly additive expansion into
+  a **new** database is available below; do not edit the database ad hoc.
+  Retirement does not unpin it.
+
+### Explicit additive configuration expansion (offline preparation only)
+
+```powershell
+v6alias service --database SOURCE.sqlite --service-config OLD.yaml expand-config --new-service-config NEW.yaml --destination NEW.sqlite
+```
+
+This command **writes a new database**, not a dry run, and performs **no cutover**.
+It never replaces an existing file, switches a service, edits either YAML file,
+contacts a provider, or changes infrastructure. The source must be recognized,
+already pinned to `OLD.yaml`, and offline in SQLite **DELETE journal mode**.
+Stop all source writers before starting and keep them stopped through separately
+reviewed cutover. WAL mode (even without sidecars), any source/destination
+`-journal`, `-wal`, or `-shm`, symlinks/reparse points in inputs or parents,
+missing destination parents, existing destinations (including hard links and
+Windows case aliases), invalid history, and unpinned sources are refused.
+No mode converts a source journal, deletes a sidecar, or bypasses the pin.
+
+Additive means:
+
+- Retain every old profile and link **exactly**, including /48, default subnet,
+  managed requirement, subnet, pool and reserved numbers. Keep DNS zone and TTL.
+- Retain the entire ordered old rule vector as an identical prefix. Append rules
+  only for wholly new links; no appended rule may match any old link.
+- Add at least one profile or link; a no-op creates no file. New profiles require
+  disjoint /48s. New links may use a new subnet of an old profile, but actual /64
+  networks cannot overlap. All ordinary configuration validation still applies.
+
+Both YAML inputs are bounded to 1 MiB. Under one source read transaction, the
+command verifies schema, integrity, pin, immutable inventory and complete
+active/**retired** history against both configurations and reconciliation rules.
+Since original hostname hints are not stored, policy verification proves the
+recorded rule could have uniquely authorized the inventory identity for some
+valid hint; it does not reconstruct or authenticate a historical observation.
+Old-link allowed/denied decisions remain unchanged for **all** possible requests,
+not merely currently assigned devices.
+
+The destination is built in private same-filesystem staging: schema, unchanged
+inventory/history and the new permanent pin are committed together. No assignment
+is reallocated or replayed into the next free slot. The copy is reopened and
+compared, SQLite handles are closed, data is synced, and a no-overwrite operation
+publishes it. Ordinary failures remove owned staging files and leave no new final
+database. Do not remove unrelated files to retry; investigate them first.
+
+JSON receipt fields include `before_config_identity_sha256`,
+`after_config_identity_sha256`, `retained_records_sha256`, device/active/retired
+counts, `all_retained_records_verified`, `source_unchanged`, and
+`needs_operator_cutover: true`. Config hashes are SHA256 of the exact canonical
+identity strings, not YAML bytes. The retained digest hashes compact JSON with
+`devices` then `assignments`, each ordered by asset ID. It is a semantic history
+digest, **not a database-file hash or an authorization signature**.
+The source proof combines read-only SQLite, a locked snapshot and unchanged
+file metadata through publication; it does not freeze later source writes.
+Paths must be on trusted local filesystems with operator-controlled directories.
+Path checks do not defend against malicious concurrent directory replacement;
+portable Windows metadata does not provide file IDs. Publication is atomic,
+but crash/power-loss durability of directory entries remains filesystem-dependent.
+
+Synthetic example (use a fresh directory; never an accepted inventory):
+
+```powershell
+New-Item -ItemType Directory state\expansion-demo | Out-Null
+cargo run -- inventory --database state\expansion-demo\corporate.sqlite register --device examples\offline\device.json
+cargo run -- service --database state\expansion-demo\corporate.sqlite --service-config examples\offline\service-corporate.yaml allocate --observation examples\offline\observation.json --trusted-link corp-link
+cargo run -- service --database state\expansion-demo\corporate.sqlite --service-config examples\offline\service-corporate.yaml expand-config --new-service-config service.example.yaml --destination state\expansion-demo\expanded.sqlite
+cargo run -- service --database state\expansion-demo\expanded.sqlite --service-config service.example.yaml assignments
+```
+
+The corporate-only fixture and expanded example both use TTL 300. For a source
+already pinned to TTL 3600, both reviewed configurations must retain 3600.
+`SOURCE + OLD` and `NEW database + NEW config` continue working independently;
+the opposite combinations fail the pin. Review the receipt and retained records
+before any separately authorized service/file cutover. Never merge subsequent
+writes into either database by hand.
 
 ### Foreground shadow daemon
 
@@ -802,6 +877,46 @@ races are not a supported security boundary. Stdout uses the shared bounded
 stderr and no plan (publication failure may leave partial stdout).
 Never redirect over inputs or their aliases: the shell can truncate them before
 startup. Only successful complete output may be saved by the caller.
+
+### Remaining-fleet preparation
+
+The accepted `scout-admin` assignment remains `corp:2`. Preparation for the
+remaining clients uses an **additive expansion into a separate inventory**,
+not an in-place rewrite of the accepted database. Proposed reservations, Linux
+network files and native pfSense changes are review artifacts until the operator
+approves a fresh, snapshot-backed rollout.
+
+`scripts\Set-ServerCoreDhcpv6.ps1` is a console-only helper restricted to the
+prepared `CORP-44` Server Core guest. Its default `Inspect` action is read-only;
+`Apply` requires an explicit plan, a new private state directory and confirmation.
+The helper preserves the existing native DUID/IAID, enables default-route rejection
+before Router Discovery, pins IPv6 DNS, disables RA-based DNS and removes only
+the planned old manual ULA. IPv4 bindings, firewall and management services are
+never enabled or changed. `Verify` checks native DHCPv6 origin and exact private
+DNS answers; `-WhatIf` issues no configuration commands.
+
+The actual guest reports persistent RA-DNS as `Default`, which has no verified
+exact guest-level restoration API. Its plan must therefore explicitly select
+`"RollbackStrategy": "VmSnapshot"` and name an independently approved cold
+`RecoverySnapshot`. The helper retains `Default` in evidence, never substitutes
+`Enabled`, and never claims guest rollback succeeded for that strategy. On an
+approved failure-recovery attempt, it can stop only its journaled acquisition
+and report `VM_SNAPSHOT_RESTORE_REQUIRED`; the operator performs the separately
+approved hypervisor restore after clean shutdown. A snapshot name in JSON is an
+attestation, not proof that a snapshot exists.
+
+Windows persistent interface metadata may also contain empty inherited
+Advertising/Forwarding values. These are accepted only when the active values
+are disabled, are recorded unchanged, and cannot be altered without refusal.
+DNS ownership includes both effective addresses and persistent `NameServer`
+contents. Failure-journal errors are reported separately and do not mask the
+original failure or silently suppress approved, durably journaled recovery.
+
+The isolation guard retains its normal five-VM demo lifecycle and keeps
+quarantine off by default. A separate, explicitly approved migration caller can
+request read-only observation with `allow_quarantine=True`; that still verifies
+the exact quarantine disk, dedicated network, bridge membership and isolation.
+It does not add quarantine to `Demo.ps1` startup/shutdown ownership.
 
 #### Root-local pfSense helper (capture-only installation)
 

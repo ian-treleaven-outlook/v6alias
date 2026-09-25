@@ -513,7 +513,7 @@ class FakePath:
         return str(self.path) in self.fixture.symlinks
 
     def is_file(self):
-        return (str(self.path) in {*host.IMAGES.values(), host.WINDOWS_IMAGE, *host.WINDOWS_MEDIA}
+        return (str(self.path) in {*host.IMAGES.values(), host.QUARANTINE_IMAGE, host.WINDOWS_IMAGE, *host.WINDOWS_MEDIA}
                 and str(self.path) not in self.fixture.missing)
 
     def is_dir(self):
@@ -581,10 +581,11 @@ class Fixture:
                 ET.SubElement(nic, "link", state=self.windows_link)
             if active:
                 ET.SubElement(nic, "target", dev=self.targets[name, network])
-        if name in host.APPROVED or name == host.WINDOWS:
+        if name in host.VMs or name == host.WINDOWS:
             disk = ET.SubElement(devices, "disk", type="file", device="disk")
             ET.SubElement(disk, "driver", name="qemu", type="qcow2")
-            ET.SubElement(disk, "source", file=host.WINDOWS_IMAGE if name == host.WINDOWS else host.IMAGES[name])
+            ET.SubElement(disk, "source", file=host.WINDOWS_IMAGE if name == host.WINDOWS else
+                          host.QUARANTINE_IMAGE if name in host.BLOCKED else host.IMAGES[name])
         if name == host.WINDOWS:
             ET.SubElement(disk, "target", bus="sata", dev="sda")
             for index, path in enumerate(sorted(host.WINDOWS_MEDIA)):
@@ -647,6 +648,43 @@ class Fixture:
 
 
 class GuardTests(unittest.TestCase):
+    def test_quarantine_observation_needs_explicit_separate_migration_allowance(self):
+        fixture = Fixture(("scout-quar-client",))
+        with self.assertRaisesRegex(RuntimeError, "must remain off"):
+            fixture.guard()
+        self.assertEqual(host.guard(runner=fixture.run, path_factory=fixture.path,
+                                    allow_quarantine=True), fixture.states)
+        self.assertNotIn("scout-quar-client", host.APPROVED)
+        with self.assertRaisesRegex(RuntimeError, "six original"):
+            host.guard(require_off=True, runner=fixture.run, path_factory=fixture.path,
+                       allow_quarantine=True)
+        self.assertFalse(any(call[:2] in (("virsh", "start"), ("virsh", "shutdown"))
+                             for call in fixture.calls))
+        for value in (1, "true", None, ["scout-quar-client"]):
+            with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "explicit boolean"):
+                host.guard(runner=fixture.run, path_factory=fixture.path, allow_quarantine=value)
+
+    def test_quarantine_migration_still_requires_exact_private_image_and_network(self):
+        for active in (False, True):
+            for kind in ("disk", "network", "uplink"):
+                fixture = Fixture(("scout-quar-client",) if active else ())
+                if kind == "disk":
+                    fixture.domain_override("scout-quar-client",
+                        lambda r: r.find("./devices/disk/source").set("file", "/private/unapproved.qcow2"),
+                        active=active)
+                elif kind == "network":
+                    fixture.domain_override("scout-quar-client",
+                        lambda r: r.find("./devices/interface/source").set("network", "scout-lan"),
+                        active=active)
+                else:
+                    fixture.extra_members["virbr-scoutq"] = {"physical0"}
+                with self.subTest(active=active, kind=kind), self.assertRaises(RuntimeError):
+                    host.guard(runner=fixture.run, path_factory=fixture.path, allow_quarantine=True)
+        fixture = Fixture(("scout-quar-client",))
+        fixture.symlinks.add(host.QUARANTINE_IMAGE)
+        with self.assertRaisesRegex(RuntimeError, "Symlinked"):
+            host.guard(runner=fixture.run, path_factory=fixture.path, allow_quarantine=True)
+
     def test_router_has_exactly_four_distinct_scout_networks_and_own_image(self):
         fixture = Fixture(host.APPROVED)
         self.assertEqual(fixture.guard(), fixture.states)
